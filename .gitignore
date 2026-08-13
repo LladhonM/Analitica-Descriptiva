@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# HTML crudo de diagnostico: pesado y no aporta al repo
+data/debug/
+
+# Parciales de corridas interrumpidas
+data/raw/_checkpoint_*
+
+.ipynb_checkpoints/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

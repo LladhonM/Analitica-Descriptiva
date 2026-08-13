@@ -1,0 +1,18 @@
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+pandas>=2.0.0
+lxml>=5.0.0
+
+# Descompresion HTTP. Sin estos, si pedimos Brotli/zstd el cuerpo llega
+# comprimido y sin decodificar: status 200, cientos de KB, y CERO avisos.
+# Ese fue el bug que dejaba a MercadoLibre/Remax/Zonaprop en 0.
+Brotli>=1.1.0
+zstandard>=0.22.0
+
+# Imita la huella TLS de Chrome. Ayuda con los portales que filtran por
+# fingerprint del handshake (Zonaprop usa DataDome).
+curl_cffi>=0.7.0
+
+# Opcionales
+# pyarrow>=15.0.0      # para guardar en formato parquet (--formato parquet)
+# playwright>=1.40.0   # plan B para Zonaprop si DataDome igual bloquea
