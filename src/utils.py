@@ -84,11 +84,7 @@ def _codecs_disponibles() -> list[str]:
         import brotli  # noqa: F401
         codecs.append("br")
     except ImportError:
-        try:
-            import brotlicffi  # noqa: F401
-            codecs.append("br")
-        except ImportError:
-            pass
+        pass
     try:
         import zstandard  # noqa: F401
         codecs.append("zstd")
@@ -143,12 +139,8 @@ def descomprimir(data: bytes, encoding: str) -> Optional[bytes]:
             except zlib.error:
                 return zlib.decompress(data, -zlib.MAX_WBITS)
         if enc == "br":
-            try:
-                import brotli
-                return brotli.decompress(data)
-            except ImportError:
-                import brotlicffi
-                return brotlicffi.decompress(data)
+            import brotli
+            return brotli.decompress(data)
         if enc == "zstd":
             import zstandard
             return zstandard.ZstdDecompressor().decompress(data)
