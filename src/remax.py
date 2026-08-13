@@ -17,6 +17,23 @@ a inmuebles de gama media-alta con exclusividad de la red.
 
 NOTA: al ser una API no documentada, los nombres de campo pueden cambiar sin aviso.
 El parser lee cada campo de forma defensiva con `dig()`.
+
+NOTA 2 (2026): Remax migro el backend. Tres cosas cambiaron y rompieron el
+scraper original:
+  1. El host paso de api.redremax.com a api-ar.redremax.com (el viejo dominio
+     ya ni siquiera resuelve por DNS).
+  2. El filtro `in:operationId=` quedado sin efecto: la API lo ignora y
+     siempre devuelve una mezcla de venta/alquiler/temporal. Ahora se filtra
+     por `operacion` del lado del cliente usando el campo `operation.value`
+     de cada item ("sale" / "rent" / "temporal").
+  3. El filtro geografico `locations=` ya no acepta el id numerico viejo
+     (14028 para Capital Federal): ahora usa el codigo de provincia/estado
+     ("CF"). Como referencia extra, tambien se filtra por `addressInfo`
+     ("Barrio, Capital Federal") por si el filtro de la API vuelve a cambiar.
+  4. El listado (`findAll`) dejo de traer dormitorios, cocheras, antiguedad,
+     descripcion y features -- esos campos se movieron a la ficha individual
+     (`findBySlug/{slug}`). Por eso `--detalle` ahora importa mas que antes:
+     sin el, quedan varias columnas vacias.
 """
 
 from __future__ import annotations
@@ -34,10 +51,14 @@ from .base import BaseScraper
 from . import utils
 
 
-API = "https://api.redremax.com/remaxweb-ar/api/listings/findAll"
+API = "https://api-ar.redremax.com/remaxweb-ar/api/listings/findAll"
+API_DETALLE = "https://api-ar.redremax.com/remaxweb-ar/api/listings/findBySlug/{slug}"
 
-# IDs internos de operacion en la API de Remax
-OPERACION_ID = {"venta": 1, "alquiler": 2}
+# Valor de operation.value en la respuesta de la API, por operacion.
+# El filtro `in:operationId=` del lado del servidor ya no funciona (ver
+# NOTA 2 en el docstring del modulo), asi que esto se usa para filtrar
+# del lado del cliente.
+OPERACION_VALUE = {"venta": "sale", "alquiler": "rent"}
 
 
 def dig(d: Any, *keys, default=None):
@@ -85,18 +106,25 @@ class RemaxScraper(BaseScraper):
     # ------------------------------------------------------------------ URLs
 
     def build_url(self, pagina: int) -> str:
-        # La API pagina desde 0
+        # La API pagina desde 0.
+        # No se filtra por tipo de inmueble (typeId): los ids cambiaron y hoy
+        # llegan hasta el 18+, filtrar con el rango viejo (1-13) excluiria
+        # tipos nuevos como terrenos_y_lotes. Tampoco se filtra por operacion
+        # aca (ver OPERACION_VALUE): se hace del lado del cliente en
+        # _parse_item.
+        # Importante: NO ordenar por `-priceUsd`. Como el filtro operationId
+        # esta roto, ordenar por precio deja los alquileres (precio mensual,
+        # ordenes de magnitud mas bajo que una venta) enterrados a miles de
+        # paginas de distancia -- con esa orden, --operacion alquiler no
+        # trae una sola fila en las primeras paginas. Sin sort, la mezcla
+        # venta/alquiler queda pareja pagina a pagina.
         page = pagina - 1
-        op_id = OPERACION_ID.get(self.operacion, 1)
         return (
             f"{API}"
             f"?page={page}"
             f"&pageSize={self.page_size}"
-            f"&sort=-priceUsd"
-            f"&in:operationId={op_id}"
-            f"&in:typeId=1,2,3,4,5,6,7,8,9,10,11,12,13"   # todos los tipos de inmueble
-            f"&locations=in::::14028:::"                    # 14028 = Capital Federal
-            f"&filterCount=0"
+            f"&filterCount=1"
+            f"&locations=in:CF::::"                         # CF = Capital Federal
             f"&viewMode=list"
         )
 
@@ -151,102 +179,101 @@ class RemaxScraper(BaseScraper):
                     print(f"    [item] error: {type(e).__name__}: {e}")
         return registros
 
+    def _extraer_antiguedad(self, year_built) -> tuple[Optional[int], Optional[int]]:
+        """De un anio de construccion (ej. 1998) deriva antiguedad_anios y a_estrenar."""
+        av = utils.to_float(year_built)
+        if av is None:
+            return None, None
+        antiguedad_anios = None
+        if av > 1800:   # vino como anio de construccion
+            from datetime import datetime
+            antiguedad_anios = datetime.now().year - int(av)
+        elif 0 <= av <= 200:
+            antiguedad_anios = int(av)
+        if antiguedad_anios is None:
+            return None, None
+        return antiguedad_anios, (1 if antiguedad_anios <= 0 else 0)
+
     def _parse_item(self, it: dict) -> Optional[dict]:
         if not isinstance(it, dict):
             return None
 
-        id_aviso = str(dig(it, "id") or dig(it, "listingId") or "")
+        # El filtro `in:operationId=` del lado del servidor esta roto (ver
+        # NOTA 2 en el docstring): findAll devuelve venta/alquiler/temporal
+        # mezclados sin importar el filtro pedido. Se filtra aca.
+        op_value = utils.norm_key(str(dig(it, "operation", "value") or ""))
+        if op_value != OPERACION_VALUE.get(self.operacion):
+            return None
+
+        id_aviso = str(dig(it, "id") or dig(it, "internalId") or "")
         slug = dig(it, "slug") or ""
         url = f"https://www.remax.com.ar/listings/{slug}" if slug else \
               (f"https://www.remax.com.ar/listings/{id_aviso}" if id_aviso else None)
         if not url:
             return None
 
+        # --- Ubicacion ---
+        # El filtro `locations=in:CF::::` (ver NOTA 2) ya restringe a Capital
+        # Federal, pero se re-valida por si ese filtro vuelve a cambiar de
+        # formato sin que nadie lo note.
+        address_info = utils.clean_text(dig(it, "addressInfo") or "")
+        if "capital federal" not in utils.norm_key(address_info):
+            return None
+        # addressInfo viene como "Barrio, Capital Federal" o
+        # "Sub-barrio, Barrio, Capital Federal": el primer segmento es el
+        # mas especifico.
+        barrio_raw = address_info.split(",")[0].strip() if address_info else ""
+
         # --- Precio ---
-        # La API expone price + currency, y ademas priceUsd ya convertido
         precio = utils.to_float(dig(it, "price"))
-        moneda_raw = (dig(it, "currency", "value")
-                      or dig(it, "currency", "code")
-                      or dig(it, "currency")
-                      or "")
-        moneda_raw = utils.norm_key(str(moneda_raw))
+        moneda_raw = utils.norm_key(str(dig(it, "currency", "value") or ""))
         if "usd" in moneda_raw or "dolar" in moneda_raw:
             moneda = "USD"
-        elif "ars" in moneda_raw or "peso" in moneda_raw or "$" in moneda_raw:
+        elif "ars" in moneda_raw or "peso" in moneda_raw:
             moneda = "ARS"
         else:
-            moneda = "USD" if utils.to_float(dig(it, "priceUsd")) == precio else None
+            moneda = None
 
-        if precio is None:
-            precio = utils.to_float(dig(it, "priceUsd"))
-            moneda = moneda or "USD"
+        expensas = utils.to_float(dig(it, "expensesPrice"))
+        expensas_moneda_raw = utils.norm_key(str(dig(it, "expensesCurrency", "value") or ""))
+        if "ars" in expensas_moneda_raw or "peso" in expensas_moneda_raw:
+            expensas_moneda = "ARS"
+        elif "usd" in expensas_moneda_raw or "dolar" in expensas_moneda_raw:
+            expensas_moneda = "USD"
+        else:
+            expensas_moneda = "ARS" if expensas else None
 
-        expensas = utils.to_float(dig(it, "expenses") or dig(it, "expensas"))
-
-        # --- Ubicacion ---
-        direccion = utils.clean_text(dig(it, "displayAddress") or dig(it, "address") or "")
-        barrio_raw = utils.clean_text(
-            dig(it, "geo", "name")
-            or dig(it, "geoLabel")
-            or dig(it, "neighbourhood")
-            or dig(it, "location", "name")
-            or ""
-        )
-        # Remax devuelve el label completo tipo "Belgrano, Capital Federal, ..."
-        if not barrio_raw:
-            barrio_raw = utils.clean_text(dig(it, "geo", "label") or "")
-
+        direccion = utils.clean_text(dig(it, "displayAddress") or "")
         calle, altura, piso = utils.parse_address(direccion)
 
         # Coordenadas: la API las trae en GeoJSON [lon, lat]
-        coords = dig(it, "geo", "location", "coordinates") or dig(it, "coordinates")
+        coords = dig(it, "location", "coordinates")
         lat = lon = None
         if isinstance(coords, (list, tuple)) and len(coords) >= 2:
             lon, lat = utils.to_float(coords[0]), utils.to_float(coords[1])
-        else:
-            lat = utils.to_float(dig(it, "latitude") or dig(it, "lat"))
-            lon = utils.to_float(dig(it, "longitude") or dig(it, "lng"))
         # Sanity check: CABA esta cerca de (-34.6, -58.4)
         if lat is not None and not (-35.1 < lat < -34.4):
             lat = lon = None
 
         # --- Metricas ---
-        sup_total = utils.to_float(dig(it, "dimensionTotalBuilt") or dig(it, "totalSurface"))
-        sup_cub = utils.to_float(dig(it, "dimensionCovered") or dig(it, "coveredSurface"))
-        terreno = utils.to_float(dig(it, "dimensionLand"))
-        if not sup_total:
-            sup_total = sup_cub or terreno
+        sup_total = utils.to_float(dig(it, "dimensionTotalBuilt") or dig(it, "dimensionLand"))
+        sup_cub = utils.to_float(dig(it, "dimensionCovered"))
 
-        ambientes = dig(it, "totalRooms") or dig(it, "rooms") or dig(it, "ambientes")
-        dormitorios = dig(it, "bedrooms") or dig(it, "dormitorios")
-        banos = dig(it, "bathrooms") or dig(it, "banos")
-        cocheras = dig(it, "parkingSpaces") or dig(it, "garages")
-
-        antiguedad = dig(it, "yearBuilt") or dig(it, "antiquity")
+        ambientes = dig(it, "totalRooms")
+        banos = dig(it, "bathrooms")
+        # dormitorios/cocheras/antiguedad/descripcion/features ya no vienen
+        # en el listado (findAll): se movieron a la ficha individual. Se
+        # completan en enrich_detail() cuando se corre con --detalle.
+        dormitorios = None
+        cocheras = None
         antiguedad_anios, a_estrenar = None, None
-        if antiguedad is not None:
-            av = utils.to_float(antiguedad)
-            if av is not None:
-                if av > 1800:   # vino como anio de construccion
-                    from datetime import datetime
-                    antiguedad_anios = datetime.now().year - int(av)
-                elif 0 <= av <= 200:
-                    antiguedad_anios = int(av)
-                if antiguedad_anios is not None:
-                    a_estrenar = 1 if antiguedad_anios <= 0 else 0
 
         titulo = utils.clean_text(dig(it, "title") or "")
-        descripcion = utils.clean_text(dig(it, "description") or "")
+        descripcion = ""
 
-        tipo = utils.clean_text(
-            dig(it, "type", "value") or dig(it, "propertyType") or dig(it, "type") or ""
-        )
+        tipo = utils.clean_text(dig(it, "type", "value") or "")
 
-        # Features vienen como lista de objetos {name: ...}
-        feats = dig(it, "features") or []
-        feats_txt = " ".join(
-            str(dig(f, "name") or dig(f, "value") or f) for f in feats
-        ) if isinstance(feats, list) else ""
+        feats_txt = ""
 
         barrio = utils.normalizar_barrio(barrio_raw) or utils.normalizar_barrio(direccion)
 
@@ -260,7 +287,7 @@ class RemaxScraper(BaseScraper):
             precio_moneda=moneda,
             precio_texto=f"{moneda or ''} {precio or ''}".strip(),
             expensas_valor=expensas,
-            expensas_moneda="ARS" if expensas else None,
+            expensas_moneda=expensas_moneda,
             direccion=direccion,
             calle=calle,
             altura=altura,
@@ -282,6 +309,67 @@ class RemaxScraper(BaseScraper):
             descripcion=descripcion,
             detalles=utils.clean_text(feats_txt),
         )
+
+    # ---------------------------------------------------------------- detalle
+
+    def enrich_detail(self, rec: dict) -> dict:
+        """
+        Visita la ficha individual (findBySlug) para completar dormitorios,
+        cocheras, antiguedad, descripcion y amenities: campos que el listado
+        (findAll) ya no trae (ver NOTA 2 en el docstring del modulo).
+        Solo se ejecuta con --detalle, porque duplica el tiempo de corrida.
+        """
+        url = rec.get("url")
+        if not url:
+            return rec
+
+        slug = url.rstrip("/").rsplit("/", 1)[-1]
+        detalle_url = API_DETALLE.format(slug=slug)
+
+        resp = self.session.get(detalle_url, timeout=25)
+        if resp.status_code != 200:
+            return rec
+        try:
+            payload = resp.json()
+        except ValueError:
+            return rec
+
+        d = dig(payload, "data")
+        if not isinstance(d, dict):
+            return rec
+
+        rec["dormitorios"] = utils.to_float(dig(d, "bedrooms"))
+        if rec["dormitorios"] is not None:
+            rec["dormitorios"] = int(rec["dormitorios"])
+
+        cocheras = utils.to_float(dig(d, "parkingSpaces"))
+        rec["cocheras"] = int(cocheras) if cocheras is not None else None
+
+        antiguedad_anios, a_estrenar = self._extraer_antiguedad(dig(d, "yearBuilt"))
+        rec["antiguedad_anios"] = antiguedad_anios
+        rec["es_a_estrenar"] = a_estrenar
+
+        descripcion = utils.clean_text(dig(d, "description") or "")
+        if descripcion:
+            rec["descripcion"] = descripcion
+
+        # Los features vienen como lista de objetos {value, lang, category, ...}
+        feats = dig(d, "features") or []
+        if isinstance(feats, list) and feats:
+            feats_txt = " ".join(
+                str(dig(f, "value") or dig(f, "lang") or "") for f in feats
+            )
+            rec["detalles"] = utils.clean_text(feats_txt)
+
+        # geo.citie es un barrio limpio (sin el "Capital Federal" pegado al
+        # lado): si el barrio no se pudo resolver desde addressInfo, probar
+        # con este.
+        if not rec.get("barrio"):
+            citie = utils.clean_text(dig(d, "geo", "citie") or "")
+            if citie:
+                rec["barrio"] = utils.normalizar_barrio(citie)
+
+        return rec
 
 
 def scrape(operacion: str = "venta", max_pages: int = 5, **kwargs):
