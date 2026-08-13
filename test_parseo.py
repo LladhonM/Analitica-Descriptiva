@@ -180,37 +180,6 @@ check("fallback al segundo", first_text(soup, ["p.no-existe", "p.card__address"]
 check("ninguno matchea", first_text(soup, ["p.no", "div.tampoco"]), "")
 check("elementos", len(first_elements(soup, ["li"])), 4)
 
-# Parseo end-to-end de una card de Argenprop simulada
-print("[13] Parseo end-to-end de una card")
-from src.argenprop import ArgenpropScraper
-
-scraper = ArgenpropScraper.__new__(ArgenpropScraper)   # sin abrir sesion HTTP
-scraper.operacion = "venta"
-scraper.tipo = "departamentos"
-scraper.zona = "capital-federal"
-scraper.debug = False
-scraper.errores = 0
-
-card = soup.find("div", class_="listing__item")
-rec = scraper._parse_card(card)
-rec = utils.enriquecer_registro(rec)
-
-check("url", rec["url"], "https://www.argenprop.com/depto--123")
-check("id_aviso", rec["id_aviso"], "123")
-check("precio_valor", rec["precio_valor"], 145000.0)
-check("precio_moneda", rec["precio_moneda"], "USD")
-check("expensas", rec["expensas_valor"], 95000.0)
-check("calle", rec["calle"], "Av. Cabildo")
-check("altura", rec["altura"], "2450")
-check("piso", rec["piso"], "7")
-check("barrio", rec["barrio"], "belgrano")
-check("comuna", rec["comuna"], 13)
-check("sup_total_m2", rec["sup_total_m2"], 68.0)
-check("ambientes", rec["ambientes"], 3)
-check("dormitorios", rec["dormitorios"], 2)
-check("banos", rec["banos"], 1)
-check("precio_m2", rec["precio_m2"], round(145000 / 68, 2))
-
 # ------------------------------------------------------------ resultado
 print("\n" + "=" * 62)
 if fallos:

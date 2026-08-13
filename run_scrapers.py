@@ -4,17 +4,17 @@ run_scrapers.py — CLI para correr los scrapers desde la terminal.
 
 Ejemplos
 --------
-    # Un portal, venta, 5 paginas
-    py run_scrapers.py --portal argenprop --operacion venta --paginas 5
+    # Venta, 5 paginas
+    py run_scrapers.py --operacion venta --paginas 5
 
-    # Todos los portales, venta y alquiler (lo que necesitas para rentabilidad)
-    py run_scrapers.py --portal todos --operacion ambas --paginas 10
+    # Venta y alquiler (lo que necesitas para rentabilidad)
+    py run_scrapers.py --operacion ambas --paginas 10
 
     # Con detalle (entra a cada ficha: mas lento, mas variables)
-    py run_scrapers.py --portal argenprop --operacion venta --paginas 5 --detalle
+    py run_scrapers.py --operacion venta --paginas 5 --detalle
 
-    # Diagnostico cuando algo no anda (guarda el HTML crudo)
-    py run_scrapers.py --portal zonaprop --paginas 1 --debug
+    # Diagnostico cuando algo no anda
+    py diagnostico.py
 
     # Consolidar todo lo que haya en data/raw en un unico dataset maestro
     py run_scrapers.py --consolidar
@@ -48,9 +48,6 @@ def correr(portal: str, operacion: str, args) -> pd.DataFrame:
     )
     if args.delay:
         kwargs["delay"] = args.delay
-    # Remax no filtra por tipo de inmueble en la URL
-    if portal != "remax":
-        kwargs["tipo"] = args.tipo
 
     try:
         return cls(**kwargs).run(fmt=args.formato)
@@ -118,16 +115,14 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    p.add_argument("--portal", default="argenprop",
+    p.add_argument("--portal", default="remax",
                    choices=PORTALES + ["todos"],
-                   help="Portal a scrapear (default: argenprop)")
+                   help="Portal a scrapear (default: remax)")
     p.add_argument("--operacion", default="venta",
                    choices=["venta", "alquiler", "ambas"],
                    help="Tipo de operacion (default: venta)")
     p.add_argument("--paginas", type=int, default=5,
                    help="Paginas de resultados a recorrer (default: 5)")
-    p.add_argument("--tipo", default="departamentos",
-                   help="Tipo de inmueble: departamentos, casas, ph (default: departamentos)")
     p.add_argument("--detalle", action="store_true",
                    help="Entrar a cada ficha individual (mas lento, mas variables)")
     p.add_argument("--delay", type=float, default=None,
