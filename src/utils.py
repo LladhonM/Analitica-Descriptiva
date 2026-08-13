@@ -312,10 +312,6 @@ class HttpSession:
 
         return resp
 
-        if ultimo_error:
-            raise ultimo_error
-        raise RuntimeError(f"No se pudo obtener {url}")
-
 
 def build_session(extra_headers: Optional[dict] = None) -> HttpSession:
     """Devuelve el cliente HTTP configurado (curl_cffi si esta disponible)."""
