@@ -27,13 +27,31 @@ robustecerlo y sumar otras fuentes.
 
 ## 2. Estado actual
 
+> **Esta (`/TP`) es la carpeta de trabajo del proyecto.** Hubo un clon paralelo
+> en `../claude` que quedó obsoleto — no trabajar ahí.
+
 **Hecho — extracción técnica:**
 
 - 4 scrapers funcionando, unificados a un esquema común de 55 columnas.
 - CLI (`run_scrapers.py`) para correr cualquier portal/operación.
 - Herramienta de diagnóstico (`diagnostico.py`) para cuando un portal deja de andar.
 - 97 tests de parseo sin red (`test_parseo.py`), todos pasando.
-- Datos capturados de Argenprop venta en `data/raw/`.
+
+**Hecho — datos:**
+
+- `data/raw/dataset_maestro.csv`: **15.261 avisos de Remax CABA**
+  (13.424 venta + 1.837 alquiler), corrido **con `--detalle`**.
+- Decisión metodológica: **solo Remax**, por unicidad de criterio y mejor
+  normalización. Documentar en el informe como límite — Remax es una red con
+  cartera propia, no una muestra del mercado completo.
+
+**Hecho — limpieza:**
+
+- `limpieza.py` deja el dataset analizable en `data/processed/`.
+  Corre con: `py limpieza.py --input data/raw/dataset_maestro.csv --tc 1500`
+- Resultado: **12.402 filas limpias (81,3%)**, 2.859 excluidas con motivo
+  trazable en `dataset_excluidos.csv`.
+- Ver sección 10 para los criterios y las trampas de este dataset.
 
 **Pendiente — todo lo demás de la Actividad #1:**
 
@@ -80,6 +98,24 @@ py run_scrapers.py --portal todos --operacion ambas --paginas 10
 py run_scrapers.py --consolidar                            # dataset maestro
 py diagnostico.py mercadolibre                             # cuando algo da 0
 ```
+
+### Pipeline de análisis
+
+```bash
+py limpieza.py --tc 1500        # crudo -> data/processed/dataset_limpio.csv
+py modelo_alquiler.py           # estima alquiler + rentabilidad de cada venta
+py simular.py                   # simulador interactivo de una propiedad
+```
+
+`simular.py` también acepta todo por argumentos:
+
+```bash
+py simular.py --barrio palermo --m2 65 --ambientes 3 --antiguedad 20 --balcon
+py simular.py --barrio "puerto madero" --m2 80 --ambientes 3 --venta 350000
+```
+
+Levanta el modelo de `data/processed/modelo_alquiler.joblib`, que genera
+`modelo_alquiler.py`. Si no existe, hay que correr los dos pasos previos.
 
 Desde notebook:
 
@@ -260,3 +296,76 @@ git commit -m "Scrapers de 4 portales inmobiliarios con esquema unificado"
 `.gitignore` ya excluye `__pycache__`, `data/debug/` y los checkpoints parciales.
 **Decidir en equipo si los CSV de `data/raw/` se versionan** — la consigna sugiere
 que sí (pide la carpeta en la estructura), pero ojo con el tamaño si crecen mucho.
+
+---
+
+## 10. Limpieza del dataset — criterios y trampas
+
+`limpieza.py` no borra nada en silencio: todo lo excluido queda en
+`data/processed/dataset_excluidos.csv` con la columna `motivo_exclusion`.
+
+### 10.1 La trampa de `precio_m2`
+
+En el dataset **crudo**, `precio_m2` es `precio_valor / sup_total_m2` sin ninguna
+conversión, así que mezcla **cuatro unidades distintas** en una sola columna:
+
+| operación | moneda | mediana | unidad real |
+|---|---|---:|---|
+| venta | USD | 1.903 | USD/m² |
+| alquiler | ARS | 17.981 | ARS/m²/**mes** |
+| alquiler | USD | 15,6 | USD/m²/**mes** |
+
+Además de la moneda hay un problema **dimensional**: venta es un precio (stock),
+alquiler es un flujo mensual. No son comparables ni en la misma moneda.
+
+`df.groupby('barrio')['precio_m2'].mean()` sobre el crudo devuelve un número sin
+significado. **Usar siempre las columnas del dataset limpio**, cuyo nombre declara
+la unidad: `venta_usd`, `alquiler_usd_mes`, `venta_m2_usd`, `alquiler_m2_usd_mes`.
+Cada una se llena solo para su operación; en una fila de venta,
+`alquiler_usd_mes` es `NaN`.
+
+### 10.2 Errores de carga corregidos
+
+Seis registros con la moneda u operación mal cargada, corregidos por `id_aviso`
+en el paso 1 de `limpieza.py`:
+
+- 1 publicado como **venta en ARS** que era alquiler (600.000 ARS, título "ALQUILER").
+- 5 publicados como **alquiler en USD** cuyo monto solo tiene sentido en pesos
+  (650.000 / 900.000 / 1.000.000 / 2.400.000). Verificado por dos vías: caen en el
+  rango normal de alquileres ARS, y leídos como ARS/m²/mes dan valores coherentes.
+- Uno de ellos (`78f7fd56…`) además tiene la superficie mal (694 m² para un
+  monoambiente): se le anula `sup_total_m2` en vez de inventar un valor.
+
+Corregir estas 5 filas sobre 434 baja la media de alquileres USD **un 82%**.
+
+### 10.3 Tipo de cambio
+
+Parámetro `--tc` (default 1500). El script además calcula el **TC implícito**
+del propio mercado: mediana de ARS/m² dividido mediana de USD/m² en alquileres
+(da ~1.122). Compara precios **por m²**, no totales, porque los alquileres en
+dólares son sistemáticamente propiedades más grandes.
+
+La rentabilidad es muy sensible al TC: pasar de 1.200 a 1.500 mueve el KPI de
+7,35%–4,32% a 6,54%–3,86%. **El orden entre barrios se mantiene** — las
+conclusiones comparativas son robustas, el nivel absoluto no.
+
+### 10.4 Cuántos alquileres hacen falta
+
+Hay ~8 ventas por cada alquiler. Eso condiciona cómo estimar el alquiler
+esperado de una propiedad en venta:
+
+- **Por barrio × ambientes:** solo el 28% de las ventas cae en una celda con 20+
+  alquileres. **No alcanza.**
+- **Por barrio:** 85,6% de cobertura con 10+ alquileres. Error relativo mediano
+  del 11,3% (bootstrap sobre la mediana). Sirve para el KPI agregado.
+- **Modelo de regresión** sobre `log(alquiler)` con superficie, ambientes, baños,
+  antigüedad, barrio y dummies: **R² = 0,84 y error mediano 11,5%** en validación
+  cruzada, cubriendo el 100% de las ventas. Es la mejor opción.
+
+La curva de aprendizaje **se aplana alrededor de n=674**: scrapear más alquileres
+no mejoraría la estimación. El límite es la variabilidad del mercado, no el tamaño
+de la muestra.
+
+Ese 11,5% de error se propaga al KPI: una rentabilidad real del 5% se estima
+entre 4,4% y 5,6%. Alcanza para **rankear barrios**, no para decidir sobre un
+inmueble puntual.

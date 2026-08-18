@@ -1,6 +1,10 @@
 requests>=2.31.0
 pandas>=2.0.0
 
+# Modelo de estimacion de alquiler (modelo_alquiler.py). El parametro
+# min_frequency de OneHotEncoder existe desde 1.1.
+scikit-learn>=1.1.0
+
 # Solo para los tests de test_parseo.py (first_text/first_elements de
 # src/base.py, pensados para portales HTML). Remax es API JSON pura y no
 # la necesita para scrapear.

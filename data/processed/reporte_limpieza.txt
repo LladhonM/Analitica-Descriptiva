@@ -1,0 +1,135 @@
+
+==========================================================================
+LIMPIEZA DEL DATASET INMOBILIARIO
+==========================================================================
+Fecha        : 2026-08-17 18:23
+Entrada      : data/raw/dataset_maestro.csv
+Tipo cambio  : 1,500 ARS/USD
+Outliers     : moderado
+Filas leidas : 14,867
+
+--- PASO 1: Correcciones puntuales de errores de carga ------------------------
+    venta -> alquiler (monto y titulo de alquiler)           1 filas
+    moneda USD -> ARS (monto solo coherente en pesos)        4 filas
+    superficie anulada por inconsistente                     1 filas
+
+--- PASO 2: Filtrado a inmuebles de vivienda individual -----------------------
+    tipos excluidos:
+        oficina                        524
+        cochera                        524
+        local                          509
+        terrenos_y_lotes               406
+        deposito                        92
+        galpon                          57
+        edificio                        44
+        consultorio                     34
+        fondo_de_comercio               19
+        hotel                           18
+        otros                            4
+    no_residencial                                   2231 filas
+
+--- PASO 3: Deduplicacion -----------------------------------------------------
+    duplicado_url                                       0 filas
+    duplicado_id                                        0 filas
+    duplicado_mismo_inmueble                          235 filas
+
+--- PASO 4: Valores imposibles ------------------------------------------------
+    precio_ausente_o_cero                              49 filas
+    superficie_menor_a_10m2                             2 filas
+    superficie_mayor_a_2000m2                           5 filas
+    antiguedad fuera de rango -> NaN (fila conservada)     134 filas
+    ambientes > 15 -> NaN (fila conservada)               3 filas
+    dormitorios > 12 -> NaN (fila conservada)             2 filas
+
+--- PASO 5: Normalizacion de monedas (TC = 1,500 ARS/USD) ---------------------
+    TC usado                    :      1,500
+    TC implicito en los datos   :      1,110   (mediana ARS/m2 / mediana USD/m2)
+    desvio                      :      35.1%
+    AVISO: el TC elegido se aleja >30% del implicito.
+           El implicito refleja como el mercado convierte al publicar.
+           Si usás una cotizacion oficial, es esperable cierta brecha;
+           si es muy grande, revisá que el TC corresponda a la fecha del scraping.
+    columnas creadas: precio_usd, expensas_usd, venta_usd,
+                      alquiler_usd_mes, venta_m2_usd, alquiler_m2_usd_mes
+
+--- PASO 6: Outliers de precio/m2 — modo moderado (recorte 1% / 1% por cola) --
+    venta     rango valido:     546.51  a   4,583.63 USD/m2
+    outlier_precio_m2_venta                           220 filas
+    alquiler  rango valido:       5.71  a      28.16 USD/m2
+    outlier_precio_m2_alquiler                         28 filas
+
+--- PASO 7: Variables derivadas -----------------------------------------------
+    antiguedad_rango, superficie_rango, ratio_cubierta,
+    expensas_sobre_alquiler, tipo_familia
+
+--- PASO 8: Eliminacion de columnas inutiles ----------------------------------
+    portal                 constante (todo Remax)
+    localidad              constante (todo CABA)
+    precio_texto           redundante con precio_valor + precio_moneda
+    piso                   0.3% de completitud
+    credito_uva            0.4% de prevalencia, sin varianza
+    altura                 redondeada a la cuadra por el portal
+
+==========================================================================
+RESUMEN
+==========================================================================
+Filas iniciales :  14,867
+Filas excluidas :   2,770  (18.6%)
+Filas limpias   :  12,097  (81.4%)
+Columnas        :      60
+
+Motivos de exclusion:
+    no_residencial                       2231
+    duplicado_mismo_inmueble              235
+    outlier_precio_m2_venta               220
+    precio_ausente_o_cero                  49
+    outlier_precio_m2_alquiler             28
+    superficie_mayor_a_2000m2               5
+    superficie_menor_a_10m2                 2
+
+Composicion final:
+    alquiler     1348
+    venta       10749
+
+    departamento   9948
+    ph           1452
+    casa          697
+
+Completitud de variables clave:
+    venta_usd               88.9%
+    alquiler_usd_mes        11.1%
+    sup_total_m2           100.0%
+    ambientes              100.0%
+    dormitorios            100.0%
+    banos                  100.0%
+    antiguedad_anios        98.9%
+    barrio                 100.0%
+    latitud                 99.9%
+    expensas_usd            97.4%
+
+==========================================================================
+CONTROL: rentabilidad bruta anual por barrio
+==========================================================================
+Formula: (alquiler mediano USD x 12) / venta mediana USD
+Solo barrios con >= 25 alquileres y >= 25 ventas
+
+barrio                n_alq  n_vta   alq_usd   venta_usd   rent %
+------------------------------------------------------------------
+san nicolas              46    225       463      85,000     6.54
+balvanera                45    528       400      84,950     5.65
+san cristobal            26    227       413      88,000     5.64
+villa crespo             39    378       533     119,250     5.37
+almagro                  64    537       483     119,000     4.87
+palermo                 254   1102       650     163,250     4.78
+villa urquiza            59    438       593     159,450     4.47
+flores                   47    488       447     119,950     4.47
+nunez                    61    327       633     170,000     4.47
+caballito               114    848       533     145,000     4.41
+belgrano                 98    565       642     175,000     4.40
+recoleta                106    571       600     169,000     4.26
+villa devoto             31    351       633     197,000     3.86
+
+Archivos generados:
+    data/processed\dataset_limpio.csv
+    data/processed\dataset_excluidos.csv
+    data/processed\reporte_limpieza.txt

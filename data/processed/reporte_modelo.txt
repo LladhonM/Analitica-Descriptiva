@@ -1,0 +1,161 @@
+
+============================================================================
+MODELO DE ESTIMACION DE ALQUILER
+============================================================================
+Fecha   : 2026-08-17 21:19
+Entrada : data/processed/dataset_limpio.csv
+Alquileres para entrenar : 1,348
+Ventas a estimar         : 10,749
+
+============================================================================
+VALIDACION DEL MODELO (5-fold, fuera de muestra)
+============================================================================
+Observaciones de entrenamiento : 1,348
+Variables                      : 5 numericas, 2 categoricas, 14 dicotomicas
+
+R2 (en log)                    : 0.851
+Error relativo mediano         : 11.4%
+Error relativo medio           : 15.0%
+Predicciones con error < 10%   : 45.1%
+Predicciones con error < 20%   : 73.3%
+Predicciones con error > 50%   : 2.2%
+
+Control — mediana barrio x m2  : 14.2% (y es optimista: se calcula dentro de la misma muestra)
+Mejora del modelo              : 20%
+
+Error por segmento de superficie:
+    segmento         n    error
+    <35            317    10.5%
+    35-50          506    10.0%
+    50-70          252    12.8%
+    70-100         164    15.2%
+    100+           109    18.0%
+
+    El error crece con la superficie. Como las ventas son mas grandes
+    que los alquileres, el error real sobre las ventas es mayor que el
+    global. Por eso se asigna la banda por segmento y no una unica.
+
+Factor de smearing (Duan)      : 1.0183
+
+============================================================================
+EFECTO DE CADA VARIABLE SOBRE EL ALQUILER
+============================================================================
+Lectura: cuanto varia el alquiler esperado, en %, ante la presencia
+de la caracteristica (dummies) o un desvio estandar mas (numericas).
+
+Caracteristicas del inmueble:
+    log_sup                    +  31.0%
+    cochera_txt                +  13.6%
+    ambientes                  +  13.3%
+    amoblado                   +  12.8%
+    pileta                     +   9.2%
+    reciclado                  +   8.6%
+    antiguedad_anios             -5.3%
+    banos                      +   4.6%
+    tipo_familia_casa          +   4.3%
+    a_reciclar                   -3.8%
+    aire_acondicionado         +   3.8%
+    tipo_familia_departamento    -3.1%
+    luminoso                   +   2.4%
+    seguridad                  +   2.2%
+    ascensor                     -1.3%
+    parrilla                   +   1.2%
+    tipo_familia_ph              -1.1%
+    balcon                       -0.9%
+
+Barrios que mas suman (vs. el promedio):
+    puerto madero              +  40.5%
+    palermo                    +  15.8%
+    belgrano                   +  15.5%
+    nunez                      +  13.8%
+    recoleta                   +  12.3%
+    colegiales                 +  11.8%
+    villa crespo               +   8.9%
+    saavedra                   +   6.7%
+
+Barrios que mas restan:
+    la boca                       -6.6%
+    constitucion                  -6.7%
+    mataderos                     -7.4%
+    parque patricios              -7.9%
+    liniers                       -7.9%
+    velez sarsfield              -10.4%
+    infrequent_sklearn           -11.2%
+    floresta                     -13.7%
+
+============================================================================
+IMPUTACION DEL ALQUILER ESPERADO A LAS VENTAS
+============================================================================
+Propiedades estimadas          : 10,749
+Con estimacion confiable       : 9,203 (85.6%)
+En barrios con < 10 alquileres  : 1,546
+
+Alquiler estimado — mediana    : USD 755/mes
+Alquiler estimado — rango p5-p95: USD 388 a 2,442
+
+============================================================================
+KPIs DE RENTABILIDAD
+============================================================================
+Vacancia supuesta              : 8.0%
+Gastos del propietario         : 12.0%
+
+Error ponderado sobre las ventas: 13.8%
+    (mayor que el error global de validacion, porque las ventas son
+     mas grandes que los alquileres y ahi el modelo pierde precision)
+
+Rentabilidad bruta — mediana   : 6.99%
+Rentabilidad bruta — p25 a p75 : 5.96% a 8.29%
+Rentabilidad neta — mediana    : 5.66%
+Meses de repago — mediana      : 172 (14.3 años)
+
+Lectura de la incertidumbre:
+    rentabilidad estimada 5%  ->  real entre 4.3% y 5.7%
+    rentabilidad estimada 6%  ->  real entre 5.2% y 6.8%
+    rentabilidad estimada 8%  ->  real entre 6.9% y 9.1%
+
+Sirve para rankear barrios, no para decidir sobre un inmueble puntual.
+
+============================================================================
+RANKING DE BARRIOS POR RENTABILIDAD
+============================================================================
+barrio                   n   venta USD   USD/m2  alq est   bruta   neta
+-----------------------------------------------------------------------
+constitucion           113      65,000    1,129      570  10.19%  8.25%
+san cristobal          227      88,000    1,548      603   8.63%  6.99%
+liniers                150     119,500    1,409      767   8.38%  6.79%
+balvanera              528      84,950    1,493      580   8.30%  6.72%
+barracas               166     110,000    1,533      738   8.21%  6.65%
+san nicolas            225      85,000    1,616      605   8.20%  6.64%
+san telmo              177      95,000    1,721      654   8.18%  6.62%
+flores                 488     119,950    1,516      768   8.09%  6.55%
+monserrat              248      85,250    1,590      595   8.06%  6.53%
+villa luro             140     126,000    1,601      802   8.00%  6.48%
+floresta               133     107,900    1,401      668   7.89%  6.39%
+villa santa rita       102     127,400    1,681      763   7.77%  6.29%
+parque chacabuco       201     130,000    1,583      798   7.60%  6.15%
+villa del parque       274     139,000    1,864      819   7.32%  5.93%
+villa pueyrredon       110     159,500    1,747      934   7.32%  5.92%
+almagro                537     119,000    1,931      689   7.25%  5.87%
+villa crespo           378     119,250    2,126      693   7.16%  5.79%
+villa devoto           351     197,000    2,077    1,142   7.14%  5.78%
+caballito              848     145,000    2,078      812   6.80%  5.51%
+chacarita              106     129,000    2,175      661   6.66%  5.39%
+retiro                 150     105,000    2,076      548   6.58%  5.33%
+saavedra               242     152,100    2,321      809   6.55%  5.30%
+recoleta               571     169,000    2,333      850   6.38%  5.17%
+colegiales             207     169,900    2,500      874   6.34%  5.13%
+nunez                  327     170,000    2,782      845   6.23%  5.04%
+belgrano               565     175,000    2,577      900   6.21%  5.03%
+villa urquiza          438     159,450    2,323      772   6.15%  4.98%
+palermo               1102     163,250    2,720      804   6.12%  4.95%
+coghlan                 80     134,870    2,303      649   6.08%  4.93%
+
+Correlacion de Spearman entre precio/m2 y rentabilidad: -0.923
+-> Relacion inversa fuerte: los barrios caros rinden menos como renta.
+   Esto CONFIRMA la hipotesis planteada en el trabajo.
+
+Archivos generados:
+    data/processed\ventas_con_rentabilidad.csv
+    data/processed\ranking_barrios.csv
+    data/processed\modelo_alquiler.joblib   <- lo usa simular.py
+    data/processed\reporte_modelo.txt
