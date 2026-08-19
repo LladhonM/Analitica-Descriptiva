@@ -224,12 +224,24 @@ def entrenar_y_validar(alq: pd.DataFrame, rep: Reporte):
     rep("    que los alquileres, el error real sobre las ventas es mayor que el")
     rep("    global. Por eso se asigna la banda por segmento y no una unica.")
 
-    # Modelo final entrenado con todos los datos
+    # --- Factor de smearing ---
+    #
+    # Se calcula con los residuos OUT-OF-FOLD (los de cross_val_predict), no con
+    # los del modelo ya ajustado. Duan lo define con residuos in-sample, pero
+    # esos son artificialmente chicos: el modelo vio esas filas al entrenar.
+    # Como el factor es mean(exp(residuo)), subestimarlos subestima la correccion.
+    # La diferencia acá es minima (~0.02%), pero usar los honestos no cuesta nada
+    # y evita una objecion metodologica.
+    smear = factor_smearing((y - pred_log).values)
+
+    # Modelo FINAL entrenado con todos los datos.
+    # Esto es deliberado: las metricas de arriba ya se midieron fuera de muestra,
+    # asi que para el modelo que se guarda y se usa en produccion conviene
+    # aprovechar las 1.348 observaciones y no solo el 80% de un fold.
     pipe.fit(X, y)
-    resid = y - pipe.predict(X)
-    smear = factor_smearing(resid.values)
+
     rep("")
-    rep(f"Factor de smearing (Duan)      : {smear:.4f}")
+    rep(f"Factor de smearing (Duan)      : {smear:.4f}   (residuos out-of-fold)")
 
     return pipe, smear, err_seg
 
