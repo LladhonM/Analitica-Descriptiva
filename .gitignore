@@ -4,14 +4,34 @@ __pycache__/
 venv/
 .env
 
+# ---------------------------------------------------------------------------
+# Datos DERIVADOS: se regeneran corriendo los scripts, no se versionan.
+#
+#   py limpieza.py --tc 1500     -> dataset_limpio, dataset_excluidos, reporte
+#   py modelo_alquiler.py        -> ventas_con_rentabilidad, ranking, .joblib
+#
+# Versionarlos generaria diffs de decenas de MB en cada corrida y conflictos
+# imposibles de resolver (un CSV no se puede mergear).
+# El dataset_maestro.csv de data/raw SI se versiona: es la fuente, y
+# regenerarlo exige volver a scrapear.
+# ---------------------------------------------------------------------------
+data/processed/
+
 # HTML crudo de diagnostico: pesado y no aporta al repo
 data/debug/
 
 # Parciales de corridas interrumpidas
 data/raw/_checkpoint_*
 
+# CSVs sueltos por corrida: quedan consolidados en dataset_maestro.csv
+data/raw/remax_venta_*.csv
+data/raw/remax_alquiler_*.csv
+
 .ipynb_checkpoints/
 .vscode/
 .idea/
+
+# Configuracion local de Claude Code: es de cada maquina, no del proyecto
+.claude/
 .DS_Store
 Thumbs.db
